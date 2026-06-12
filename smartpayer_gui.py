@@ -459,12 +459,15 @@ class RecipientsDialog(tk.Toplevel):
         self.grab_set()
         # Each entry: (frame, name_var, to_var, cc_var)
         self._rows = []
+        self._count_var = tk.StringVar(value="0 penerima")
 
         header = tk.Frame(self, bg=ACCENT, height=54)
         header.pack(fill="x")
         header.pack_propagate(False)
         tk.Label(header, text="Email Recipients", bg=ACCENT, fg=BTN_FG,
                  font=("Segoe UI", 13, "bold")).pack(side="left", padx=PAD * 2)
+        tk.Label(header, textvariable=self._count_var, bg=ACCENT, fg="#93C5FD",
+                 font=("Segoe UI", 10)).pack(side="right", padx=PAD * 2)
 
         tk.Label(self, text="Client name matches the XLSX filename. Separate addresses with semicolons.",
                  bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)).pack(
@@ -513,6 +516,12 @@ class RecipientsDialog(tk.Toplevel):
                     width=12, bg="#6B7280").pack(side="right")
         self._center(parent)
 
+    # -- count -----------------------------------------------------------------
+
+    def _update_count(self):
+        n = len(self._rows)
+        self._count_var.set(f"{n} penerima")
+
     # -- search ----------------------------------------------------------------
 
     def _filter_rows(self, *_):
@@ -539,10 +548,12 @@ class RecipientsDialog(tk.Toplevel):
         def delete():
             frame.destroy()
             self._rows[:] = [r for r in self._rows if r[0] is not frame]
+            self._update_count()
 
         tk.Button(frame, text="X", command=delete, bg=PANEL_BG, fg=DANGER,
                   relief="flat", cursor="hand2").pack(side="left", padx=2)
         self._rows.append((frame, nv, tv, cv))
+        self._update_count()
 
     def _delete_all(self):
         if not self._rows:
@@ -554,6 +565,7 @@ class RecipientsDialog(tk.Toplevel):
         for child in list(self._inner.children.values()):
             child.destroy()
         self._rows.clear()
+        self._update_count()
 
     def _import_xlsx(self):
         if not EMAILER.exists():
@@ -590,6 +602,7 @@ class RecipientsDialog(tk.Toplevel):
         cfg = load_json(EMAIL_CFG)
         for name, val in cfg.get("recipients", {}).items():
             self._add(name, "; ".join(val.get("to", [])), "; ".join(val.get("cc", [])))
+        self._update_count()
         messagebox.showinfo("Import complete", "Recipients imported.", parent=self)
 
     def _save(self):
