@@ -124,87 +124,56 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-def compress_pdfs_in_folder(folder_path: Path, output_zip: Path, progress_cb=None) -> bool:
-    """
-    Compress all *_letter.pdf files in folder_path into a single ZIP file.
-    Returns True if successful, False otherwise.
-    """
-    import zipfile
-    
-    pdfs = sorted(folder_path.glob("*_letter.pdf"))
-    if not pdfs:
-        if progress_cb:
-            progress_cb("No *_letter.pdf files found to compress.")
-        return False
-    
-    try:
-        with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-            for pdf in pdfs:
-                zf.write(pdf, arcname=pdf.name)
-                if progress_cb:
-                    progress_cb(f"  Added: {pdf.name}")
-        if progress_cb:
-            progress_cb(f"  Created: {output_zip.name} ({len(pdfs)} PDFs)")
-        return True
-    except Exception as e:
-        if progress_cb:
-            progress_cb(f"  Error compressing PDFs: {e}")
-        return False        
 
-def organize_files_by_prefix(folder_path: Path, progress_cb=None) -> tuple[int, int]:
+def organize_files_by_prefix(folder_path: Path, progress_cb=None) -> tuple:
     """
     Organize files in folder_path into subfolders based on filename prefix.
     Pattern: "SmartPayer <Month> <Year> *" → folder "SmartPayer <Month> <Year>"
-    
+
     Returns: (files_moved, folders_created)
     """
     import shutil
-    import re
-    
-    # Match pattern: SmartPayer <Month> <Year> (case-insensitive)
+
     pattern = re.compile(
         r'^(SmartPayer\s+[A-Za-z]+\s+\d{4})\s+',
         re.IGNORECASE
     )
-    
-    files = [f for f in folder_path.iterdir() 
+
+    files = [f for f in folder_path.iterdir()
              if f.is_file() and not f.name.startswith("~$")]
-    
+
     if not files:
         if progress_cb:
             progress_cb("No files found to organize.")
         return 0, 0
-    
-    # Group files by prefix
+
     groups = {}
     for f in files:
         match = pattern.match(f.name)
         if match:
             prefix = match.group(1).strip()
             groups.setdefault(prefix, []).append(f)
-    
+
     if not groups:
         if progress_cb:
             progress_cb("No files match 'SmartPayer <Month> <Year>' pattern.")
         return 0, 0
-    
+
     moved = 0
     created = 0
-    
+
     for prefix, file_list in sorted(groups.items()):
-        # Create safe folder name (remove invalid chars)
         safe_name = re.sub(r'[\/:*?"<>|]', '_', prefix)
         target_folder = folder_path / safe_name
         target_folder.mkdir(exist_ok=True)
         created += 1
-        
+
         if progress_cb:
             progress_cb(f"  Creating: {safe_name}/ ({len(file_list)} files)")
-        
+
         for f in file_list:
             try:
                 dest = target_folder / f.name
-                # Handle duplicate names
                 if dest.exists():
                     stem, suffix = f.stem.rsplit('_', 1) if '_' in f.stem else (f.stem, '')
                     counter = 1
@@ -219,8 +188,9 @@ def organize_files_by_prefix(folder_path: Path, progress_cb=None) -> tuple[int, 
             except Exception as e:
                 if progress_cb:
                     progress_cb(f"    ✗ Error moving {f.name}: {e}")
-    
+
     return moved, created
+
 
 def make_button(parent, text, command,
                 width=18, bg=ACCENT, fg=BTN_FG,
@@ -483,10 +453,11 @@ class RecipientsDialog(tk.Toplevel):
         super().__init__(parent)
         self.title("Email Recipients")
         self.configure(bg=BG)
-        self.geometry("760x520")
+        self.geometry("800x560")
         self.resizable(True, True)
         self.transient(parent)
         self.grab_set()
+        # Each entry: (frame, name_var, to_var, cc_var)
         self._rows = []
 
         header = tk.Frame(self, bg=ACCENT, height=54)
@@ -498,6 +469,19 @@ class RecipientsDialog(tk.Toplevel):
         tk.Label(self, text="Client name matches the XLSX filename. Separate addresses with semicolons.",
                  bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)).pack(
             anchor="w", padx=PAD * 2, pady=(PAD, 4))
+
+        # ── Search bar ────────────────────────────────────────────
+        search_frame = tk.Frame(self, bg=BG)
+        search_frame.pack(fill="x", padx=PAD * 2, pady=(0, 6))
+        tk.Label(search_frame, text="Cari:", bg=BG, fg=TEXT,
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 6))
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", self._filter_rows)
+        search_entry = make_entry(search_frame, self._search_var, width=30)
+        search_entry.pack(side="left", ipady=4)
+        make_button(search_frame, "Hapus Filter", self._clear_search,
+                    width=12, bg="#6B7280", font_size=8).pack(side="left", padx=(6, 0))
+        # ──────────────────────────────────────────────────────────
 
         labels = tk.Frame(self, bg=BG)
         labels.pack(fill="x", padx=PAD * 2)
@@ -529,21 +513,36 @@ class RecipientsDialog(tk.Toplevel):
                     width=12, bg="#6B7280").pack(side="right")
         self._center(parent)
 
+    # -- search ----------------------------------------------------------------
+
+    def _filter_rows(self, *_):
+        query = self._search_var.get().strip().upper()
+        for frame, nv, _tv, _cv in self._rows:
+            if not query or query in nv.get().upper():
+                frame.pack(fill="x", pady=3)
+            else:
+                frame.pack_forget()
+
+    def _clear_search(self):
+        self._search_var.set("")
+
+    # -- row management --------------------------------------------------------
+
     def _add(self, name="", to="", cc=""):
-        row = tk.Frame(self._inner, bg=PANEL_BG)
-        row.pack(fill="x", pady=3)
+        frame = tk.Frame(self._inner, bg=PANEL_BG)
+        frame.pack(fill="x", pady=3)
         nv, tv, cv = tk.StringVar(value=name), tk.StringVar(value=to), tk.StringVar(value=cc)
-        make_entry(row, nv, width=24).pack(side="left", padx=2, ipady=4)
-        make_entry(row, tv, width=34).pack(side="left", padx=2, ipady=4)
-        make_entry(row, cv, width=28).pack(side="left", padx=2, ipady=4)
+        make_entry(frame, nv, width=24).pack(side="left", padx=2, ipady=4)
+        make_entry(frame, tv, width=34).pack(side="left", padx=2, ipady=4)
+        make_entry(frame, cv, width=28).pack(side="left", padx=2, ipady=4)
 
         def delete():
-            row.destroy()
-            self._rows[:] = [r for r in self._rows if r[0] is not nv]
+            frame.destroy()
+            self._rows[:] = [r for r in self._rows if r[0] is not frame]
 
-        tk.Button(row, text="X", command=delete, bg=PANEL_BG, fg=DANGER,
+        tk.Button(frame, text="X", command=delete, bg=PANEL_BG, fg=DANGER,
                   relief="flat", cursor="hand2").pack(side="left", padx=2)
-        self._rows.append((nv, tv, cv))
+        self._rows.append((frame, nv, tv, cv))
 
     def _delete_all(self):
         if not self._rows:
@@ -596,7 +595,7 @@ class RecipientsDialog(tk.Toplevel):
     def _save(self):
         cfg = load_json(EMAIL_CFG)
         cfg["recipients"] = {}
-        for nv, tv, cv in self._rows:
+        for _frame, nv, tv, cv in self._rows:
             name = nv.get().strip().upper()
             if not name:
                 continue
@@ -820,128 +819,6 @@ class SmartpayerApp(tk.Tk):
                  wraplength=390, justify="left").pack(fill="x", anchor="w", pady=(8, 0))
         self._refresh_email_status()
 
-    def _compress_pdfs(self):
-        """Handle compressing all PDFs in Generated_Letters folder."""
-        if not LETTER_OUTPUT_DIR.exists():
-            messagebox.showwarning(
-                "No Output Folder",
-                f"The Generated_Letters folder does not exist:\n{LETTER_OUTPUT_DIR}")
-            return
-        
-        pdfs = list(LETTER_OUTPUT_DIR.glob("*_letter.pdf"))
-        if not pdfs:
-            messagebox.showinfo(
-                "Nothing to Compress",
-                f"No *_letter.pdf files found in:\n{LETTER_OUTPUT_DIR}")
-            return
-        
-        # Create ZIP filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        zip_name = f"SmartPayer_Letters_{timestamp}.zip"
-        zip_path = LETTER_OUTPUT_DIR / zip_name
-        
-        # Confirm with user
-        if not messagebox.askyesno(
-            "Confirm Compression",
-            f"Compress {len(pdfs)} PDF file(s) into:\n{zip_name}\n\nProceed?"):
-            return
-        
-        # Disable button during compression
-        self._compress_btn.config(state="disabled")
-        self._log_write(f"Compressing {len(pdfs)} PDF(s) into {zip_name}...", "info")
-        
-        def worker():
-            try:
-                success = compress_pdfs_in_folder(
-                    LETTER_OUTPUT_DIR, zip_path,
-                    progress_cb=lambda msg: self.after(0, self._log_write, msg, "info"))
-                
-                if success and zip_path.exists():
-                    self.after(0, lambda: messagebox.showinfo(
-                        "Compression Complete",
-                        f"Created: {zip_name}\n({len(pdfs)} PDFs compressed)"))
-                    self.after(0, lambda: self._log_write(
-                        f"✓ PDFs compressed: {zip_name}", "done"))
-                else:
-                    self.after(0, lambda: messagebox.showerror(
-                        "Compression Failed",
-                        "Failed to create ZIP file. Check log for details."))
-            except Exception as e:
-                self.after(0, lambda: self._log_write(
-                    f"✗ Compression error: {e}", "error"))
-            finally:
-                # Re-enable button when done
-                self.after(0, lambda: self._compress_btn.config(state="normal"))
-        
-        # Run in background thread to keep UI responsive
-        threading.Thread(target=worker, daemon=True).start()        
-
-    def _organize_files(self):
-        """Handle organizing files in Generated_Letters folder by prefix."""
-        if not LETTER_OUTPUT_DIR.exists():
-            messagebox.showwarning(
-                "No Output Folder",
-                f"The Generated_Letters folder does not exist:\n{LETTER_OUTPUT_DIR}")
-            return
-        
-        # Count files that match the pattern
-        import re
-        pattern = re.compile(r'^(SmartPayer\s+[A-Za-z]+\s+\d{4})\s+', re.IGNORECASE)
-        matching = [f for f in LETTER_OUTPUT_DIR.iterdir() 
-                   if f.is_file() and pattern.match(f.name)]
-        
-        if not matching:
-            messagebox.showinfo(
-                "Nothing to Organize",
-                f"No files matching 'SmartPayer <Month> <Year>' pattern found in:\n{LETTER_OUTPUT_DIR}")
-            return
-        
-        # Preview what will happen
-        prefixes = set()
-        for f in matching:
-            match = pattern.match(f.name)
-            if match:
-                prefixes.add(match.group(1).strip())
-        
-        preview = "\n".join(f"  • {p}/ ({sum(1 for f in matching if pattern.match(f.name) and pattern.match(f.name).group(1).strip() == p)} files)" 
-                          for p in sorted(prefixes))
-        
-        if not messagebox.askyesno(
-            "Confirm Organization",
-            f"Organize {len(matching)} file(s) into {len(prefixes)} folder(s):\n\n{preview}\n\nProceed?"):
-            return
-        
-        # Disable button during organization
-        self._organize_btn.config(state="disabled")
-        self._log_write(f"Organizing {len(matching)} file(s) by prefix...", "info")
-        
-        def worker():
-            try:
-                moved, created = organize_files_by_prefix(
-                    LETTER_OUTPUT_DIR,
-                    progress_cb=lambda msg: self.after(0, self._log_write, msg, "info"))
-                
-                if moved > 0:
-                    self.after(0, lambda: messagebox.showinfo(
-                        "Organization Complete",
-                        f"Moved {moved} file(s) into {created} folder(s).\n"
-                        f"Location: {LETTER_OUTPUT_DIR}"))
-                    self.after(0, lambda: self._log_write(
-                        f"✓ Files organized: {moved} moved, {created} folders created", "done"))
-                else:
-                    self.after(0, lambda: messagebox.showwarning(
-                        "Nothing Moved",
-                        "No files were moved. Check log for details."))
-            except Exception as e:
-                self.after(0, lambda: self._log_write(
-                    f"✗ Organization error: {e}", "error"))
-            finally:
-                # Re-enable button when done
-                self.after(0, lambda: self._organize_btn.config(state="normal"))
-        
-        # Run in background thread to keep UI responsive
-        threading.Thread(target=worker, daemon=True).start()
-
     def _build_run_panel(self, parent):
         panel = tk.Frame(parent, bg=PANEL_BG,
                          highlightbackground=BORDER, highlightthickness=1)
@@ -966,21 +843,11 @@ class SmartpayerApp(tk.Tk):
         self._retry_btn.pack(anchor="w", pady=(6, 0))
         self._retry_btn.config(state="disabled")
 
-        # ── NEW: Compress PDFs button ──────────────────────────────
-        self._compress_btn = make_button(
-            inner, "Compress Completed PDFs", self._compress_pdfs,
-            width=22, bg="#6366F1", font_size=9)  # Purple accent
-        self._compress_btn.pack(anchor="w", pady=(6, 0))
-        self._compress_btn.config(state="disabled")  # Disabled until pipeline completes
-        # ──────────────────────────────────────────────────────────
-
-        # ── NEW: Organize Files button ────────────────────────────
         self._organize_btn = make_button(
             inner, "Organise PDF Output", self._organize_files,
-            width=22, bg="#8B5CF6", font_size=9)  # Violet accent
+            width=22, bg="#8B5CF6", font_size=9)
         self._organize_btn.pack(anchor="w", pady=(6, 0))
         self._organize_btn.config(state="normal")
-        # ──────────────────────────────────────────────────────────        
 
         pb_frame = tk.Frame(inner, bg=PANEL_BG)
         pb_frame.pack(fill="x", pady=(10, 0))
@@ -997,7 +864,12 @@ class SmartpayerApp(tk.Tk):
                          highlightbackground=BORDER, highlightthickness=1)
         panel.pack(fill="both", expand=True)
 
-        SectionLabel(panel, "Activity Log").pack(anchor="w", padx=PAD, pady=(PAD, 4))
+        hdr = tk.Frame(panel, bg=PANEL_BG)
+        hdr.pack(fill="x", padx=PAD, pady=(PAD, 4))
+        SectionLabel(hdr, "Activity Log").pack(side="left")
+        make_button(hdr, "Export Log", self._export_log,
+                    width=12, bg="#6B7280", font_size=8).pack(side="right")
+
         HRule(panel).pack(fill="x", padx=PAD)
 
         log_frame = tk.Frame(panel, bg=PANEL_BG)
@@ -1043,22 +915,13 @@ class SmartpayerApp(tk.Tk):
         self._running = running
         state = "disabled" if running else "normal"
         self._run_btn.config(state=state)
-        
+
         if self._retry_btn:
             retry_state = "normal" if (not running and self._failed_email_pdfs) else "disabled"
             self._retry_btn.config(state=retry_state)
-            
-        # ── Control compress button state ─────────────────────────
-        if self._compress_btn:
-            has_pdfs = LETTER_OUTPUT_DIR.exists() and any(LETTER_OUTPUT_DIR.glob("*_letter.pdf"))
-            compress_state = "normal" if (not running and has_pdfs) else "disabled"
-            self._compress_btn.config(state=compress_state)
-            
-        # ── NEW: Control organise button state ───────────────────
+
         if self._organize_btn:
-            # Only disable during active processing. Folder content doesn't matter.
             self._organize_btn.config(state="disabled" if running else "normal")
-        # ──────────────────────────────────────────────────────────
 
     def _format_elapsed(self, started_at):
         if not started_at:
@@ -1105,6 +968,24 @@ class SmartpayerApp(tk.Tk):
         method = "SMTP" if smtp.get("username") else "Outlook"
         self._email_status_var.set(f"{count} recipient(s) configured. Send via {method}.")
 
+    def _export_log(self):
+        """Export the activity log to a .txt file."""
+        content = self._log.get("1.0", "end-1c")
+        if not content.strip():
+            messagebox.showinfo("Log Kosong", "Tidak ada log untuk diekspor.")
+            return
+        today = datetime.now()
+        filename = f"log-smartpayer-{today.strftime('%d-%m-%Y')}.txt"
+        out_path = BASE_DIR / filename
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            messagebox.showinfo(
+                "Log Diekspor",
+                f"Log berhasil diekspor ke:\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Gagal Ekspor", f"Gagal mengekspor log:\n{e}")
+
     def _run_subprocess(self, args, progress_cb):
         result = subprocess.run(args, capture_output=True, text=True,
                                 encoding="utf-8", errors="replace")
@@ -1115,7 +996,30 @@ class SmartpayerApp(tk.Tk):
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout or "Subprocess failed").strip())
 
+    def _send_email_categorized(self, pdf, progress_cb):
+        """
+        Send email for the given PDF. Returns (success, failure_reason).
+        failure_reason: None | 'no_recipient' | 'send_failed'
+        """
+        if not EMAILER.exists():
+            return False, 'send_failed'
+        if not pdf.exists():
+            return False, 'send_failed'
+        progress_cb(f"Sending email for {pdf.name}...")
+        result = subprocess.run(
+            [sys.executable, str(EMAILER), "--pdf", str(pdf)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        output = (result.stdout or "") + (result.stderr or "")
+        for line in output.splitlines():
+            progress_cb(line)
+        if result.returncode == 0:
+            return True, None
+        if "no recipient found" in output.lower():
+            return False, 'no_recipient'
+        return False, 'send_failed'
+
     def _send_email_for_pdf(self, pdf, progress_cb):
+        """Legacy wrapper kept for compatibility."""
         if not EMAILER.exists():
             raise FileNotFoundError("smartpayer_emailer.py not found; email skipped.")
         if not pdf.exists():
@@ -1124,6 +1028,69 @@ class SmartpayerApp(tk.Tk):
         self._run_subprocess(
             [sys.executable, str(EMAILER), "--pdf", str(pdf)],
             progress_cb)
+
+    def _convert_docx_to_pdf_word(self, docx_path, pdf_path, progress_cb):
+        """Convert a DOCX file to PDF using Microsoft Word COM. Returns True on success."""
+        if sys.platform != "win32":
+            progress_cb(f"  [!] PDF conversion only supported on Windows.")
+            return False
+        try:
+            import comtypes.client
+        except ImportError:
+            progress_cb("  [!] comtypes not installed. Run: pip install comtypes")
+            return False
+        word = None
+        try:
+            progress_cb(f"  Mengkonversi {docx_path.name} ke PDF...")
+            word = comtypes.client.CreateObject("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = False
+            doc = word.Documents.Open(str(docx_path.resolve()))
+            doc.ExportAsFixedFormat(
+                OutputFileName=str(pdf_path.resolve()),
+                ExportFormat=17,
+                OpenAfterExport=False,
+                OptimizeFor=0,
+                Range=0,
+                Item=0,
+                IncludeDocProps=True,
+                KeepIRM=True,
+                CreateBookmarks=0,
+                DocStructureTags=True,
+                BitmapMissingFonts=True,
+                UseISO19005_1=False,
+            )
+            doc.Close(False)
+            word.Quit()
+            word = None
+            if pdf_path.exists():
+                progress_cb(f"  [OK] PDF berhasil dibuat: {pdf_path.name}")
+                return True
+            progress_cb(f"  [!] PDF tidak ditemukan setelah konversi: {pdf_path.name}")
+            return False
+        except Exception as e:
+            progress_cb(f"  [!] Gagal konversi {docx_path.name}: {e}")
+            try:
+                if word is not None:
+                    word.Quit()
+            except Exception:
+                pass
+            return False
+
+    def _find_docx_without_pdf(self):
+        """
+        Scan Generated_Letters for *_with_tables.docx files that have no
+        corresponding *_letter.pdf. Returns list of (docx_path, pdf_path).
+        """
+        if not LETTER_OUTPUT_DIR.exists():
+            return []
+        result = []
+        for docx in sorted(LETTER_OUTPUT_DIR.glob("*_with_tables.docx")):
+            pdf_stem = docx.stem.replace("_with_tables", "_letter")
+            pdf_path = docx.parent / f"{pdf_stem}.pdf"
+            if not pdf_path.exists():
+                result.append((docx, pdf_path))
+        return result
 
     def _payer_name_from_letter_pdf(self, pdf):
         stem = Path(pdf).stem.replace("_", " ")
@@ -1135,11 +1102,11 @@ class SmartpayerApp(tk.Tk):
             return None
         return match.group(1).strip().upper()
 
-    def _add_blank_recipients_for_failed_emails(self, failed_emails):
+    def _add_blank_recipients_for_failed_emails(self, failed_no_recipient):
         cfg = load_json(EMAIL_CFG)
         recips = cfg.setdefault("recipients", {})
         added = []
-        for pdf, _reason in failed_emails:
+        for pdf, _reason in failed_no_recipient:
             payer_name = self._payer_name_from_letter_pdf(pdf)
             if not payer_name:
                 continue
@@ -1152,7 +1119,7 @@ class SmartpayerApp(tk.Tk):
             save_json(EMAIL_CFG, cfg)
             self._refresh_email_status()
             self._log_write(
-                f"Added {len(added)} failed payer name(s) to recipients with blank TO/CC: "
+                f"Menambahkan {len(added)} nama payer ke daftar penerima dengan TO/CC kosong: "
                 + "; ".join(added),
                 "warn")
         return added
@@ -1187,6 +1154,64 @@ class SmartpayerApp(tk.Tk):
         messagebox.showinfo(
             "Import complete",
             f"Recipients imported successfully.\nElapsed time: {elapsed}")
+
+    def _organize_files(self):
+        if not LETTER_OUTPUT_DIR.exists():
+            messagebox.showwarning(
+                "No Output Folder",
+                f"The Generated_Letters folder does not exist:\n{LETTER_OUTPUT_DIR}")
+            return
+
+        pattern = re.compile(r'^(SmartPayer\s+[A-Za-z]+\s+\d{4})\s+', re.IGNORECASE)
+        matching = [f for f in LETTER_OUTPUT_DIR.iterdir()
+                    if f.is_file() and pattern.match(f.name)]
+
+        if not matching:
+            messagebox.showinfo(
+                "Nothing to Organize",
+                f"No files matching 'SmartPayer <Month> <Year>' pattern found in:\n{LETTER_OUTPUT_DIR}")
+            return
+
+        prefixes = set()
+        for f in matching:
+            match = pattern.match(f.name)
+            if match:
+                prefixes.add(match.group(1).strip())
+
+        preview = "\n".join(
+            f"  • {p}/ ({sum(1 for f in matching if pattern.match(f.name) and pattern.match(f.name).group(1).strip() == p)} files)"
+            for p in sorted(prefixes))
+
+        if not messagebox.askyesno(
+            "Confirm Organization",
+            f"Organize {len(matching)} file(s) into {len(prefixes)} folder(s):\n\n{preview}\n\nProceed?"):
+            return
+
+        self._organize_btn.config(state="disabled")
+        self._log_write(f"Organizing {len(matching)} file(s) by prefix...", "info")
+
+        def worker():
+            try:
+                moved, created = organize_files_by_prefix(
+                    LETTER_OUTPUT_DIR,
+                    progress_cb=lambda msg: self.after(0, self._log_write, msg, "info"))
+                if moved > 0:
+                    self.after(0, lambda: messagebox.showinfo(
+                        "Organization Complete",
+                        f"Moved {moved} file(s) into {created} folder(s).\n"
+                        f"Location: {LETTER_OUTPUT_DIR}"))
+                    self.after(0, lambda: self._log_write(
+                        f"Files organized: {moved} moved, {created} folders created", "done"))
+                else:
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Nothing Moved", "No files were moved. Check log for details."))
+            except Exception as e:
+                self.after(0, lambda: self._log_write(
+                    f"Organisation error: {e}", "error"))
+            finally:
+                self.after(0, lambda: self._organize_btn.config(state="normal"))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # -- RUN ---------------------------------------------------------------------
 
@@ -1244,7 +1269,7 @@ class SmartpayerApp(tk.Tk):
         self._progress.start(10)
 
         self._log_write("=" * 54, "info")
-        self._log_write("Starting Smartpayer Automation pipeline...", "ok")
+        self._log_write("Memulai pipeline Smartpayer Automation...", "ok")
         self._log_write(
             f"Input file : {Path(input_path).name if input_path else 'INPUT folder'}",
             "info")
@@ -1290,7 +1315,11 @@ class SmartpayerApp(tk.Tk):
 
         generated = []
         failed_letters = []
-        failed_emails = []
+        failed_pdf_conversion = []   # PDF path where DOCX exists but PDF wasn't created
+        failed_no_recipient = []     # (pdf_path, reason) - no email recipient found
+        failed_email_send = []       # (pdf_path, reason) - other send failures
+        email_sent = 0
+
         for idx, xlsx in enumerate(xlsx_files, start=1):
             progress_cb(f"Generating letter {idx}/{len(xlsx_files)}: {xlsx.name}")
             try:
@@ -1309,21 +1338,37 @@ class SmartpayerApp(tk.Tk):
 
             pdf = LETTER_OUTPUT_DIR / f"{xlsx.stem}_letter.pdf"
             docx = LETTER_OUTPUT_DIR / f"{xlsx.stem}_with_tables.docx"
+
+            if not pdf.exists() and docx.exists():
+                # Generator ran but PDF conversion failed — DOCX is available
+                failed_pdf_conversion.append(pdf)
+                generated.append(docx)
+                progress_cb(f"  [!] Konversi PDF gagal untuk {xlsx.name}. DOCX tersedia.")
+                continue
+
             output_file = pdf if pdf.exists() else docx
             generated.append(output_file)
 
-            if auto_send:
-                try:
-                    self._send_email_for_pdf(pdf, progress_cb)
-                except Exception as exc:
-                    failed_emails.append((pdf, str(exc)))
-                    progress_cb(f"Warning: email failed for {pdf.name}: {exc}")
+            if auto_send and pdf.exists():
+                success, reason = self._send_email_categorized(pdf, progress_cb)
+                if success:
+                    email_sent += 1
+                elif reason == 'no_recipient':
+                    failed_no_recipient.append((pdf, reason))
+                    progress_cb(f"  [!] Tidak ada penerima email untuk {pdf.name}")
+                else:
+                    failed_email_send.append((pdf, str(reason)))
+                    progress_cb(f"  [!] Gagal mengirim email untuk {pdf.name}")
 
         progress_cb("Letter generation complete.")
         return {
             "generated": generated,
+            "email_sent": email_sent,
+            "auto_send": auto_send,
             "failed_letters": failed_letters,
-            "failed_emails": failed_emails,
+            "failed_pdf_conversion": failed_pdf_conversion,
+            "failed_no_recipient": failed_no_recipient,
+            "failed_email_send": failed_email_send,
         }
 
     def _on_progress(self, msg):
@@ -1340,128 +1385,232 @@ class SmartpayerApp(tk.Tk):
         self._set_status(msg)
 
     def _retry_failed_emails(self):
-        if self._running or not self._failed_email_pdfs:
+        if self._running:
             return
 
+        # Open recipients dialog for editing, then after user closes it
+        # also scan for DOCX-only files to retry conversion
         dlg = RecipientsDialog(self)
         self.wait_window(dlg)
         self._refresh_email_status()
 
-        pdfs = [pdf for pdf in self._failed_email_pdfs if pdf.exists()]
-        if not pdfs:
-            messagebox.showinfo("Nothing to retry", "No failed email PDFs are available.")
+        # Collect email retries (PDFs with known failures)
+        pdfs_to_retry = [pdf for pdf in self._failed_email_pdfs if pdf.exists()]
+
+        # Scan for DOCX files without a corresponding PDF (conversion failures)
+        docx_conversions = self._find_docx_without_pdf()
+
+        if not pdfs_to_retry and not docx_conversions:
+            messagebox.showinfo(
+                "Tidak Ada yang Diulang",
+                "Tidak ada email gagal atau konversi PDF yang tertunda.")
             self._failed_email_pdfs = []
             self._set_running(False)
+            return
+
+        summary_lines = []
+        if pdfs_to_retry:
+            summary_lines.append(f"• {len(pdfs_to_retry)} email gagal akan dicoba ulang")
+        if docx_conversions:
+            summary_lines.append(
+                f"• {len(docx_conversions)} file DOCX akan dikonversi ke PDF:")
+            for docx, pdf in docx_conversions[:5]:
+                summary_lines.append(f"    - {docx.name}")
+            if len(docx_conversions) > 5:
+                summary_lines.append(f"    ... dan {len(docx_conversions) - 5} lainnya")
+
+        if not messagebox.askyesno(
+            "Konfirmasi Retry",
+            "\n".join(summary_lines) + "\n\nLanjutkan?",
+            default="yes"):
             return
 
         self._set_running(True)
         self._progress.start(10)
         self._retry_started_at = datetime.now()
         self._log_write("=" * 54, "info")
-        self._log_write(f"Retrying {len(pdfs)} failed email(s)...", "warn")
+        self._log_write(
+            f"Retry: {len(pdfs_to_retry)} email + {len(docx_conversions)} konversi PDF...",
+            "warn")
 
         thread = threading.Thread(
             target=self._retry_failed_emails_thread,
-            args=(pdfs,),
+            args=(pdfs_to_retry, docx_conversions),
             daemon=True)
         thread.start()
 
-    def _retry_failed_emails_thread(self, pdfs):
-        still_failed = []
+    def _retry_failed_emails_thread(self, pdfs_to_retry, docx_conversions):
         progress = lambda msg: self.after(0, self._on_progress, msg)
-        for pdf in pdfs:
-            try:
-                self._send_email_for_pdf(pdf, progress)
-            except Exception as exc:
-                still_failed.append(pdf)
-                progress(f"Warning: email still failed for {pdf.name}: {exc}")
-        self.after(0, self._on_retry_complete, still_failed)
 
-    def _on_retry_complete(self, still_failed):
+        # Step 1: Convert DOCX → PDF
+        conv_success = []
+        conv_failed = []
+        for docx, pdf in docx_conversions:
+            ok = self._convert_docx_to_pdf_word(docx, pdf, progress)
+            if ok:
+                conv_success.append(pdf)
+            else:
+                conv_failed.append(pdf)
+
+        # Step 2: Retry emails — original failed list + newly converted PDFs
+        all_pdfs = list(pdfs_to_retry) + conv_success
+        email_ok = []
+        still_failed = []
+        for pdf in all_pdfs:
+            if not pdf.exists():
+                still_failed.append(pdf)
+                continue
+            success, reason = self._send_email_categorized(pdf, progress)
+            if success:
+                email_ok.append(pdf)
+            else:
+                still_failed.append(pdf)
+                progress(f"  [!] Email masih gagal untuk {pdf.name}")
+
+        self.after(0, self._on_retry_complete,
+                   email_ok, still_failed, conv_success, conv_failed)
+
+    def _on_retry_complete(self, email_ok, still_failed, conv_success, conv_failed):
         self._progress.stop()
         elapsed = self._format_elapsed(self._retry_started_at)
         self._retry_started_at = None
-        self._failed_email_pdfs = still_failed
+        self._failed_email_pdfs = [p for p in still_failed if p and p.exists()]
         self._set_running(False)
+
+        # Write summary to activity log
+        self._log_write("=" * 54, "done")
+        self._log_write(f"Total Surat Berhasil Terkirim (Retry): {len(email_ok)}", "done")
+        self._log_write(f"Total Surat Masih Gagal Terkirim: {len(still_failed)}",
+                        "warn" if still_failed else "done")
         if still_failed:
-            self._log_write(f"{len(still_failed)} email(s) still failed after retry.", "warn")
-            self._log_write(f"Email retry elapsed time: {elapsed}", "done")
-            self._set_status(f"Some emails still failed. Elapsed: {elapsed}")
-            messagebox.showwarning(
-                "Retry complete",
-                f"{len(still_failed)} email(s) still failed. "
-                "Update recipients and use Retry Failed Emails again.\n"
-                f"Elapsed time: {elapsed}")
+            for i, pdf in enumerate(still_failed, 1):
+                self._log_write(f"  {i}. {pdf.name}", "warn")
+        self._log_write(f"Konversi PDF Berhasil: {len(conv_success)}", "done")
+        self._log_write(f"Konversi PDF Gagal: {len(conv_failed)}",
+                        "error" if conv_failed else "done")
+        if conv_failed:
+            for i, pdf in enumerate(conv_failed, 1):
+                self._log_write(f"  {i}. {pdf.name}", "error")
+        self._log_write(f"Waktu Proses Retry: {elapsed}", "done")
+        self._log_write("=" * 54, "done")
+
+        self._set_status(f"Retry selesai. Waktu: {elapsed}")
+
+        # Build popup summary
+        summary = (
+            f"Total Surat Berhasil Terkirim (Retry): {len(email_ok)}\n"
+            f"Total Surat Masih Gagal Terkirim: {len(still_failed)}\n"
+            f"Konversi PDF Berhasil: {len(conv_success)}\n"
+            f"Konversi PDF Gagal: {len(conv_failed)}\n"
+            f"Waktu Proses Retry: {elapsed}"
+        )
+        if still_failed:
+            messagebox.showwarning("Retry Selesai", summary)
         else:
-            self._log_write("All failed emails were sent successfully.", "done")
-            self._log_write(f"Email retry elapsed time: {elapsed}", "done")
-            self._set_status(f"All failed emails sent. Elapsed: {elapsed}")
-            messagebox.showinfo(
-                "Retry complete",
-                "All failed emails were sent successfully.\n"
-                f"Elapsed time: {elapsed}")
+            messagebox.showinfo("Retry Selesai", summary)
 
     def _on_success(self, created, result):
         self._progress.stop()
         elapsed = self._format_elapsed(self._run_started_at)
         self._run_started_at = None
-        self._set_running(False)
         self._refresh_email_status()
+
         generated = result.get("generated", [])
+        email_sent = result.get("email_sent", 0)
+        auto_send = result.get("auto_send", False)
         failed_letters = result.get("failed_letters", [])
-        failed_emails = result.get("failed_emails", [])
-        self._failed_email_pdfs = [
-            pdf for pdf, _reason in failed_emails
-            if pdf and pdf.exists()
-        ]
+        failed_pdf_conversion = result.get("failed_pdf_conversion", [])
+        failed_no_recipient = result.get("failed_no_recipient", [])
+        failed_email_send = result.get("failed_email_send", [])
+
+        total_email_failed = (len(failed_no_recipient) + len(failed_email_send)
+                              + len(failed_pdf_conversion))
+
+        # Collect failed PDFs for retry button
+        self._failed_email_pdfs = []
+        for pdf, _r in failed_no_recipient:
+            if pdf and pdf.exists():
+                self._failed_email_pdfs.append(pdf)
+        for pdf, _r in failed_email_send:
+            if pdf and pdf.exists():
+                self._failed_email_pdfs.append(pdf)
+
         self._set_running(False)
 
-        self._log_write("=" * 54, "done")
-        self._log_write(
-            f"COMPLETE - {len(created)} split file(s), {len(generated)} letter output(s).",
-            "done")
-        if failed_letters:
-            self._log_write(f"{len(failed_letters)} letter generation failure(s).", "error")
-        if failed_emails:
-            self._log_write(f"{len(failed_emails)} email failure(s) queued for retry.", "warn")
-        added_recipients = self._add_blank_recipients_for_failed_emails(failed_emails)
-        self._log_write(f"Pipeline elapsed time: {elapsed}", "done")
-        self._log_write("=" * 54, "done")
-        self._set_status(f"Pipeline complete. Elapsed: {elapsed}")
+        # Add blank recipients for no-recipient failures
+        added_recipients = self._add_blank_recipients_for_failed_emails(failed_no_recipient)
 
-        summary = (
-            "Automation finished.\n"
-            f"{len(created)} split file(s) saved to OUTPUT.\n"
-            f"{len(generated)} letter output(s) saved to Generated_Letters.\n"
-            f"Elapsed time: {elapsed}"
-        )
-        if failed_letters:
-            summary += f"\n{len(failed_letters)} letter(s) failed to generate."
-        if failed_emails:
-            summary += f"\n{len(failed_emails)} email(s) failed to send."
-        if added_recipients:
-            summary += (
-                f"\n{len(added_recipients)} payer name(s) were added to the "
-                "recipient list with blank TO/CC."
-            )
+        # ── Activity log summary ──────────────────────────────────
+        self._log_write("=" * 54, "done")
+        self._log_write(f"{len(generated)} Item telah Berhasil Diproses", "done")
+        if auto_send:
+            self._log_write(
+                f"Total Surat Berhasil Terkirim: {email_sent}",
+                "done")
+            self._log_write(
+                f"Total Surat Gagal Terkirim: {total_email_failed}",
+                "warn" if total_email_failed else "done")
 
-        if failed_emails and self._failed_email_pdfs:
+            if failed_no_recipient:
+                self._log_write(
+                    f"Total Surat Gagal Terkirim karena Email Penerima Tidak Ditemukan: "
+                    f"{len(failed_no_recipient)}",
+                    "warn")
+                for i, (pdf, _) in enumerate(failed_no_recipient, 1):
+                    self._log_write(f"  {i}. {pdf.name}", "warn")
+
+            if failed_email_send:
+                self._log_write(
+                    f"Total Surat Gagal Terkirim (Error lainnya): {len(failed_email_send)}",
+                    "error")
+                for i, (pdf, _) in enumerate(failed_email_send, 1):
+                    self._log_write(f"  {i}. {pdf.name}", "error")
+
+            if failed_pdf_conversion:
+                self._log_write(
+                    f"Total Surat Gagal Terkirim karena Konversi DOCX menjadi PDF gagal: "
+                    f"{len(failed_pdf_conversion)}",
+                    "error")
+                for i, pdf in enumerate(failed_pdf_conversion, 1):
+                    self._log_write(f"  {i}. {pdf.name}", "error")
+
+        if failed_letters:
+            self._log_write(
+                f"Letter generation gagal: {len(failed_letters)}", "error")
+
+        self._log_write(f"Waktu Proses: {elapsed}", "done")
+        self._log_write("=" * 54, "done")
+        self._set_status(f"Pipeline selesai. Waktu: {elapsed}")
+
+        # ── End-report popup ──────────────────────────────────────
+        summary = f"{len(generated)} Item telah Berhasil Diproses\nWaktu Proses: {elapsed}"
+        if auto_send:
+            if total_email_failed > 0:
+                summary += f"\nTotal {total_email_failed} Email Gagal Terkirim"
+            if failed_pdf_conversion:
+                summary += f"\n{len(failed_pdf_conversion)} Item gagal di-Convert menjadi PDF"
+            if failed_no_recipient:
+                summary += (
+                    f"\n{len(failed_no_recipient)} Item Gagal Terkirim karena "
+                    "Email Penerima Tidak Ditemukan")
+
+        has_retryable = auto_send and (
+            self._failed_email_pdfs or self._find_docx_without_pdf())
+
+        if has_retryable:
             retry_now = messagebox.askyesno(
-                "Email retry available",
+                "Hasil Pipeline",
                 summary
-                + "\n\nSome emails failed, often because a payer is not in the recipient list yet."
-                  "\nThe failed payer names are already in the recipient list with blank TO/CC."
-                  "\nAdd the email addresses now and retry failed emails?",
+                + "\n\nBeberapa email gagal dikirim. Lakukan Retry sekarang?",
                 default="yes")
             if retry_now:
                 self._retry_failed_emails()
             else:
                 messagebox.showinfo(
-                    "Complete",
-                    summary + "\n\nUse Retry Failed Emails after updating recipients.")
-            return
-
-        messagebox.showinfo("Complete", summary)
+                    "Selesai",
+                    summary + "\n\nGunakan tombol 'Retry Failed Emails' untuk mencoba lagi.")
+        else:
+            messagebox.showinfo("Selesai", summary)
 
     def _on_error(self, error_msg):
         self._progress.stop()
