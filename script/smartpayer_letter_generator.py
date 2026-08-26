@@ -1,43 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-SmartPayer Letter Generator
-============================
-
-Summary of changes vs. the previous version
--------------------------------------------
-1. Replaced the `letter_date_num` field with `year_num` (last two digits of
-   the year). The template placeholder "Date Number (i.e., 26)" now maps
-   to `year_num` so the rendered Letter No. ends with `…/V/26` instead of
-   the day-of-month.
-2. The `letter_number` field's last 3 digits (`nnn`) are now a dynamic
-   per-batch sequence counter. The GUI / watcher passes a `--batch-token`
-   on every run; the first file in a batch gets `…001`, the second `…002`,
-   etc. The counter is stored in `.smartpayer_batch_state.json` and is
-   reset whenever the batch token changes (i.e., a new manual run or a
-   new watcher scan-cycle).
-3. The `discount_from` and `discount_until` values are no longer read
-   from defaults or user input. They are auto-derived per-file from the
-   XLSX header row (datetime objects starting at column 8). Any value
-   present in defaults for these two keys is overridden on a per-file
-   basis right after the workbook is loaded and before the DOCX is filled.
-4. `team3_email` and `team4_email` are now rendered as clickable
-   `mailto:` hyperlinks (blue, underlined) in the generated DOCX/PDF.
-   They were previously plain text. `team_email` is unchanged — it was
-   already a hyperlink in the original template.
-
-Existing behaviour preserved
-----------------------------
-- Watch mode, PDF export, emailer integration, XLSX table appending,
-  template-fill mechanics, and all other placeholders are untouched.
-
-Usage:
-    python smartpayer_letter_generator.py --xlsx <path/to/file.xlsx>
-    python smartpayer_letter_generator.py --watch <folder>
-    python smartpayer_letter_generator.py --setup-defaults
-    python smartpayer_letter_generator.py --show-defaults
-"""
-
 import os
 import sys
 import time
@@ -85,7 +47,7 @@ def _print(*args, **kwargs):
         print(safe, **{k: v for k, v in kwargs.items() if k != "end"})
 
 
-# ─── Paths ─────────────────────────────────────────────────────────────────────
+# Paths
 SCRIPT_DIR    = Path(__file__).parent.resolve()
 DEFAULTS_FILE = SCRIPT_DIR / "smartpayer_letter_defaults.json"
 TEMPLATE_FILE = SCRIPT_DIR / "Smart_Payer_Program_Letter_Template2.docx"
@@ -97,11 +59,6 @@ BATCH_STATE_FILE = SCRIPT_DIR / ".smartpayer_batch_state.json"
 
 _batch_counter_lock = threading.Lock()
 
-# ─── Variable schema ───────────────────────────────────────────────────────────
-# NOTE: `letter_date_num` has been REPLACED by `year_num` (yy of current year).
-# `discount_from` and `discount_until` are kept here only so they appear in
-# defaults/CLI flows, but in run_pipeline() they are ALWAYS overridden with
-# values read from the input XLSX. They are not editable in the GUI anymore.
 VARIABLE_SCHEMA = [
     {"key": "company_name",         "label": "Company Full Name",                        "example": "Mencari Cinta Sejati"},
     {"key": "company_abbr",         "label": "Company Abbreviation",                     "example": "MCS"},
@@ -129,18 +86,12 @@ VARIABLE_SCHEMA = [
     {"key": "team4_email",          "label": "Finance Team 4 Email",                     "example": "amber@amq.com"},
 ]
 
-# ─── Placeholder → variable key map ────────────────────────────────────────────
-# The "Date Number (i.e., 26)" placeholder in the template originally meant
-# the day of the month, but is now used for the LAST TWO DIGITS OF THE YEAR
-# (per the new spec — the Letter No. now ends with /V/26 rather than /V/12).
-# The DOCX template does NOT need to be edited because the placeholder string
-# we search for is identical; only its semantic mapping changes here.
 REPLACEMENTS = [
     ("dd Month Name yyyy (i.e., 26 September 2026)",                          "letter_date"),
     ("Month Name yyyy (i.e., September 2026)",                                "month_year"),
     ("Month Name (i.e., September)",                                          "month_name"),
     ("Month in Roman Number (i.e., IX)",                                      "month_roman"),
-    ("Date Number (i.e., 26)",                                                "year_num"),   # ← REMAPPED: was letter_date_num
+    ("Date Number (i.e., 26)",                                                "year_num"),   
     ("mmddnnn (i.e., 0926123)",                                               "letter_number"),
     ("company name i.e., Mencari Cinta Sejati (MCS)",                        "company_name_full"),
     ("abbreviation of the company name i.e., MCS",                           "company_abbr"),
@@ -150,13 +101,6 @@ REPLACEMENTS = [
     ("annualized interest rate (i.e., 8)",                                   "annual_rate"),
     ("amount of x times of deposit interest rate in number (i.e., 4)",      "rate_multiplier_num"),
     ("amount of x times of deposit interest rate but spelt (i.e., empat)",  "rate_multiplier_word"),
-    # NOTE: the template's actual text reads "...depending of the month +1 )"
-    # (with a typo and stray "+1"). After our run-merge step it collapses to
-    # "...depending of the month+1)". The string below matches that exact
-    # post-merge form so the placeholder is actually substituted. This was a
-    # latent bug in the previous code — the old pattern never matched and
-    # the placeholder text leaked through unchanged. Required for change #3
-    # (end_of_month_date now reflects the last day of NEXT month).
     ("end of month date and year yyyy (i.e., 30/31 depending of the month+1 2026)", "end_of_month_date"),
     ("offered discount date FROM (dd) i.e., 24",                             "discount_from"),
     ("offered discount date UNTIL (dd Month Name yyyy) i.e., 27 September 2026", "discount_until"),
@@ -169,10 +113,7 @@ REPLACEMENTS = [
     ("Team no.4 email (i.e., amber@amq.com)",                                "team4_email"),
 ]
 
-
-# =============================================================================
 # DEFAULT MANAGEMENT
-# =============================================================================
 
 def load_defaults() -> dict:
     if DEFAULTS_FILE.exists():
@@ -223,13 +164,6 @@ def setup_defaults():
     values = prompt_all_variables(prefill=existing)
     save_defaults(values)
 
-
-# =============================================================================
-# AUTO-DATE COMPUTATION  (used when GUI's "Always use today's date" is on)
-# =============================================================================
-
-# Roman numeral lookup for months 1..12 — only ever 12 values so a literal
-# tuple is clearer (and faster) than a generic int→roman converter.
 _MONTH_ROMAN = ("I", "II", "III", "IV", "V", "VI", "VII", "VIII",
                 "IX", "X", "XI", "XII")
 
@@ -252,9 +186,7 @@ def compute_today_fields(today: datetime | None = None) -> dict:
     """
     today = today or datetime.now()
 
-    # Last day of the month FOLLOWING the current month — kept as a
-    # fallback only; the real end_of_month_date comes from the filename's
-    # month, not today's.
+    # Last day of the month FOLLOWING the current month (fallback only)
     if today.month == 12:
         next_year, next_month = today.year + 1, 1
     else:
@@ -268,26 +200,9 @@ def compute_today_fields(today: datetime | None = None) -> dict:
         "month_year":        today.strftime("%B %Y"),          # May 2026  (fallback)
         "month_roman":       _MONTH_ROMAN[today.month - 1],    # V
         "year_num":          today.strftime("%y"),             # 26
-        # `letter_number_prefix` is the mmdd part only; the final field
-        # `letter_number` is assembled as prefix + nnn after the batch
-        # counter is consumed.
         "letter_number_prefix": today.strftime("%m%d"),         # 0512
         "end_of_month_date": eom_next_full,                     # 30 June 2026  (fallback)
     }
-
-
-# Filename month/year parser.
-#
-# SmartPayer XLSXes follow the pattern:
-#     "Smartpayer <Month Name> <YYYY> <Client>.xlsx"
-# e.g. "Smartpayer April 2026 BANLY THEO.xlsx".
-#
-# The leading "Smartpayer" is optional in the regex so files renamed by
-# the user (e.g. "April 2026 ACME.xlsx") still parse. The match is
-# case-insensitive on the month name to tolerate "april" / "APRIL".
-#
-# We accept Indonesian month names too, since the user base is Indonesian.
-# All twelve months are listed both in English and Bahasa.
 
 _MONTH_NAMES_EN = ("January", "February", "March", "April", "May", "June",
                    "July", "August", "September", "October", "November", "December")
@@ -380,28 +295,6 @@ def compute_filename_fields(filename: str) -> dict:
         "end_of_month_date": end_of_month_date,
     }
 
-
-# =============================================================================
-# PER-BATCH COUNTER FOR letter_number
-# =============================================================================
-#
-# Design
-# ------
-# - The GUI / watcher generates one fresh `batch_token` (uuid4) per batch:
-#     * "Manual Generate Letter" click → one token, one file → counter = 001.
-#     * Watcher scan-cycle that picks up N files → one shared token, files
-#       1..N → counters 001..N (incremented serially since the watcher
-#       blocks on proc.wait() per file).
-# - Each subprocess invocation of this script receives `--batch-token <uuid>`.
-# - On invocation we read .smartpayer_batch_state.json:
-#     * If the stored token matches AND the stored date == today: increment
-#       the counter and persist.
-#     * Otherwise: reset counter to 1 and persist with the new token/date.
-# - The counter is therefore guaranteed to start at 001 for each new batch
-#   and to NEVER carry over across days even within the same batch token
-#   (cheap defence-in-depth against an extremely long-running watcher).
-
-
 def read_batch_state() -> dict:
     """Read batch state file. Callers should hold _batch_counter_lock."""
     if not BATCH_STATE_FILE.exists():
@@ -420,7 +313,6 @@ def write_batch_state(state: dict):
     """Write batch state file. Callers should hold _batch_counter_lock."""
     BATCH_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        # Write directly, overwriting previous content
         with open(BATCH_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
             f.flush()
@@ -487,30 +379,6 @@ def reset_batch_counter(batch_token: str):
         write_batch_state(state)
     _print(f"  [OK] Batch counter reset for token {batch_token[:8]}…", "success")
 
-# =============================================================================
-# REWARD-RATE DERIVATION  (from XLSX daily_rate + deposit_rate)
-# =============================================================================
-#
-# When the input XLSX provides the daily reward rate as a float in its
-# top-right header cell (e.g. 0.00022 above the "Simulasi Imbalan" label),
-# the following four template fields can all be derived from it and the
-# user's configured deposit_rate, instead of being hand-edited.
-#
-#   daily_rate           = float-from-XLSX × 100         (e.g. 0.022   %/day)
-#   annual_rate          = daily_rate × 365              (e.g. 8.03    %/year)
-#   rate_multiplier_num  = round(annual_rate / deposit_rate)   (e.g. 4)
-#   rate_multiplier_word = int_to_indonesian(...)        (e.g. "empat")
-#
-# This block adds:
-#   * int_to_indonesian()  — small helper for 0..9999 (covers all realistic
-#     deposit-rate multipliers; expandable to millions if ever needed)
-#   * compute_rate_fields() — returns the four string-typed template fields
-#     ready to drop into `variables`.
-
-# Indonesian numerals for integer spelling. Standard Bahasa convention:
-#   - "se-" prefix for one in the tens/hundreds/thousands positions
-#     (sepuluh, sebelas, seratus, seribu)
-#   - 11..19 use "belas" suffix
 _ID_DIGITS = ("nol", "satu", "dua", "tiga", "empat",
               "lima", "enam", "tujuh", "delapan", "sembilan")
 _ID_TEENS  = ("sepuluh", "sebelas", "dua belas", "tiga belas", "empat belas",
@@ -551,9 +419,7 @@ def int_to_indonesian(n: int) -> str:
         thousands, rest = divmod(n, 1000)
         head = "seribu" if thousands == 1 else f"{_ID_DIGITS[thousands]} ribu"
         return head if rest == 0 else f"{head} {int_to_indonesian(rest)}"
-    # Above 9999: fall back to a recursive ribu/juta build. Realistically we
-    # never expect rate multipliers above a handful, so this branch is just
-    # defensive — keeps the function total.
+
     if n < 1_000_000:
         thousands, rest = divmod(n, 1000)
         head = f"{int_to_indonesian(thousands)} ribu"
@@ -1997,9 +1863,6 @@ def watch_folder(folder: Path, use_defaults: bool = None):
     import time
     processed = set()
 
-    # CLI watch mode uses a single batch token for the whole watcher lifetime,
-    # which means counters will keep climbing 001, 002, 003 ... rather than
-    # resetting per scan-cycle. The GUI uses a smarter per-scan-cycle token.
     cli_batch_token = uuid.uuid4().hex
 
     class XLSXHandler(FileSystemEventHandler):
