@@ -1,0 +1,3 @@
+streamlit>=1.36
+openpyxl
+comtypes; sys_platform == "win32"

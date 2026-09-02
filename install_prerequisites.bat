@@ -114,8 +114,11 @@ echo       watchdog     ^(folder watching^)
 echo       tkcalendar   ^(Date Picker^)
 echo       pywin32      ^(Windows API^)
 echo	      comtypes     ^(MS Word API^)
+echo       streamlit    ^(web UI / dashboard^)
+echo       pandas       ^(data tables^)
+echo       altair       ^(dashboard charts^)
 echo.
-pip install python-docx openpyxl lxml watchdog tkcalendar pywin32 comtypes --upgrade
+pip install python-docx openpyxl lxml watchdog tkcalendar pywin32 comtypes streamlit pandas altair --upgrade
 if errorlevel 1 (
     echo  [WARNING] One or more packages may have failed. Check output above.
     set /a WARNINGS+=1
