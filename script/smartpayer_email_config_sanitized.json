@@ -1,0 +1,827 @@
+{
+  "cc_always": [],
+  "email_template": {
+    "subject": "Smart Payer {client_name} Periode {month} {year}",
+    "body": "Dear Bapak / Ibu Pimpinan RD,\r\n\r\nTerlampir surat dari manajeman kami terkait program “Smart Payer” periode {month} {year} untuk Invoice Jatuh tempo {next_month} {next_year}. Mohon dapat diterima dan dipelajari.\r\n\r\nKami tunggu feedback nya.\r\n\r\nAtas perhatian dan kerjasamanya kami ucapkan terima kasih.\r\n\r\nBest Regards,\r\nChristopher Lissants"
+  },
+  "recipients": {
+    "Quantum Marketplace Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Aurora Wholesale Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Oakridge Enterprises Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Clearwater Supply Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Logistics Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Global Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Networks Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Golden Partners Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Commerce Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Greenstone Partners Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Jade Holdings Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Skyward Services Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Cedar Commerce Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Partners Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Oakridge Industries Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Lakeside International Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Vertex Networks Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Quantum Industries Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Summit Logistics Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Stonebridge Trading Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Moonrise International Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Consumer Goods Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Aurora Resources Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Highland Logistics Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Vertex Partners Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Highland Industries Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Golden Ventures Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Vertex Distribution Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Northstar Marketplace Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Jade Mercantile Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Skyward Manufacturing Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Suncrest Resources Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Quantum Enterprises Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Eastgate Services Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Ventures Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Oakridge Mercantile Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Stonebridge Industries Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Stonebridge Retail Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Services Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Northstar Enterprises Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Grandview Solutions Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Wildfern Marketplace Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Fairmont Supply Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Harbor Resources Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Cedar Mercantile Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Wildfern Marketplace Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Global Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Manufacturing Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Suncrest Supply Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Everbright Enterprises Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Skyward Ventures Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Highland Enterprises Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Vertex Industries Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Clearwater Commerce Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Bluepeak Solutions Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Quantum Resources Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Greenstone Holdings Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Industries Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Jade Ventures Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Enterprises Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Clearwater Consumer Goods Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Skyward Logistics Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Ironwood Industries Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Grandview Industries Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Ironwood Services Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Silverline Services Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Highland Enterprises Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Bluepeak Industries Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Fairmont Consumer Goods Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Cedar International Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Wholesale Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Silverline Alliance Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Aurora Retail Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Lakeside Wholesale Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Jade Networks Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Suncrest Industries Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Oakridge Alliance Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Solutions Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Pacific Services Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Oakridge Consumer Goods Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Redwood Resources Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Clearwater Partners Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Resources Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Everbright Resources Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Aurora Trading Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Maple Marketplace Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Aurora Solutions Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Grandview Services Inc.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Vertex Supply Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Suncrest Commerce Corp.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Ironwood Wholesale Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Moonrise Alliance Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Jade Holdings Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Brightpath Logistics Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Aurora Enterprises Ltd.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Bluepeak Supply Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Summit Mercantile Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Skyward Distribution Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Northstar Mercantile Co.": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    },
+    "Maple Ventures Group": {
+      "to": [
+        "christopher.lissants@gmail.com"
+      ],
+      "cc": [
+        "lissants@protonmail.com"
+      ]
+    }
+  },
+  "accounts": {
+    "halim.analytics": {
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 587,
+        "use_tls": true,
+        "username": "",
+        "password": "",
+        "sender_name": "AR RD Team",
+        "sender_email": ""
+      },
+      "outlook_fallback": {
+        "enabled": true,
+        "send_as_account": "halim.analytics@godrejcp.com"
+      }
+    }
+  },
+  "active_account": "halim.analytics"
+}
