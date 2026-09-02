@@ -88,11 +88,66 @@ def load_config() -> dict:
         _print(f"      Run --edit-config to create it.")
         return {}
     with open(CONFIG_FILE, encoding="utf-8") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    return _migrate_to_accounts(cfg)
 
 def save_config(cfg: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+# =============================================================================
+# MULTI-ACCOUNT SUPPORT
+# =============================================================================
+#
+# Config can hold several named sender identities under "accounts", e.g.:
+#   {
+#     "active_account": "arrd",
+#     "accounts": {
+#       "arrd":     {"smtp": {...}, "outlook_fallback": {...}},
+#       "finance":  {"smtp": {...}, "outlook_fallback": {...}}
+#     },
+#     "cc_always": [...],
+#     "recipients": {...},
+#     "email_template": {...}
+#   }
+#
+# Older configs stored a single top-level "smtp"/"outlook_fallback" pair —
+# those are auto-migrated into an "accounts" entry named "default" the
+# first time the config is loaded, so nothing breaks.
+
+def _migrate_to_accounts(cfg: dict) -> dict:
+    """Move legacy top-level smtp/outlook_fallback into accounts['default']."""
+    if "accounts" in cfg:
+        cfg.setdefault("active_account", next(iter(cfg["accounts"]), "default"))
+        return cfg
+    if "smtp" in cfg or "outlook_fallback" in cfg:
+        cfg["accounts"] = {
+            "default": {
+                "smtp": cfg.pop("smtp", {}),
+                "outlook_fallback": cfg.pop("outlook_fallback", {}),
+            }
+        }
+        cfg["active_account"] = "default"
+    return cfg
+
+def get_account(cfg: dict, name: str = None) -> dict:
+    """
+    Return the {"smtp":..., "outlook_fallback":...} dict for the named
+    account, or the active account if name is None. Returns {} if not found.
+    """
+    accounts = cfg.get("accounts", {})
+    key = name or cfg.get("active_account")
+    return accounts.get(key, {})
+
+def list_accounts(cfg: dict) -> list:
+    return list(cfg.get("accounts", {}).keys())
+
+def set_active_account(cfg: dict, name: str) -> bool:
+    if name not in cfg.get("accounts", {}):
+        return False
+    cfg["active_account"] = name
+    return True
 
 def get_recipient(cfg: dict, client_name: str) -> dict:
     """
@@ -392,8 +447,8 @@ def compose_email(cfg: dict, parsed: dict, pdf_path: Path) -> dict:
 # SEND VIA SMTP
 # =============================================================================
 
-def send_smtp(cfg: dict, email: dict) -> bool:
-    smtp_cfg = cfg.get("smtp", {})
+def send_smtp(cfg: dict, email: dict, account: dict = None) -> bool:
+    smtp_cfg = (account or get_account(cfg)).get("smtp", {})
     host     = smtp_cfg.get("host", "")
     port     = int(smtp_cfg.get("port", 587))
     use_tls  = smtp_cfg.get("use_tls", True)
@@ -445,12 +500,133 @@ def send_smtp(cfg: dict, email: dict) -> bool:
 # SEND VIA OUTLOOK COM (Windows only, no credentials needed)
 # =============================================================================
 
-def send_outlook(cfg: dict, email: dict) -> bool:
+def _account_smtp_address(acc) -> str:
+    """
+    Best-effort SMTP address for an Outlook Account COM object.
+
+    For Exchange accounts, .SmtpAddress is sometimes blank (a known Outlook
+    COM quirk) even though the account clearly has an SMTP address in the
+    UI — in that case, resolve it via the Exchange user's primary SMTP
+    address instead.
+    """
+    try:
+        addr = str(acc.SmtpAddress or "").strip()
+        if addr:
+            return addr
+    except Exception:
+        pass
+    try:
+        exch_user = acc.CurrentUser.AddressEntry.GetExchangeUser()
+        if exch_user is not None:
+            return str(exch_user.PrimarySmtpAddress or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _find_outlook_account(outlook, smtp_address: str):
+    """
+    Look up an Outlook.Session.Accounts entry by SMTP address (case-insensitive).
+    Returns the Account COM object, or None if no match / no address given.
+    """
+    if not smtp_address:
+        return None
+    target = smtp_address.strip().lower()
+    try:
+        for acc in outlook.Session.Accounts:
+            try:
+                if _account_smtp_address(acc).lower() == target:
+                    return acc
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def list_outlook_accounts():
+    """
+    Diagnostic: print every account Outlook automation can see, and how each
+    one's SMTP address resolves. Run with --list-outlook-accounts on the
+    Windows machine that has Outlook installed — this can't be tested from
+    here since it requires live Outlook COM.
+    """
+    try:
+        import win32com.client as win32
+    except ImportError:
+        _print("  [!] win32com not available. Run: pip install pywin32")
+        return
+    try:
+        outlook = win32.Dispatch("Outlook.Application")
+        accounts = list(outlook.Session.Accounts)
+    except Exception as e:
+        _print(f"  [!] Could not reach Outlook: {e}")
+        return
+    if not accounts:
+        _print("  No accounts visible to Outlook automation.")
+        return
+    _print(f"  {len(accounts)} account(s) visible to Outlook automation:")
+    for acc in accounts:
+        try:
+            name = acc.DisplayName
+        except Exception:
+            name = "(unknown)"
+        resolved = _account_smtp_address(acc)
+        try:
+            raw = str(acc.SmtpAddress or "")
+        except Exception:
+            raw = "(error)"
+        flag = "" if resolved else "  [!] could not resolve an SMTP address for this account"
+        _print(f"    - {name}: SmtpAddress='{raw}'  resolved='{resolved}'{flag}")
+
+
+def _create_mail_in_account_store(outlook, account_com_obj):
+    """
+    Create a new MailItem bound directly to the given account's own mail
+    store, instead of Application.CreateItem(0) (which always binds to the
+    profile's primary store first).
+
+    This matters because MailItem.SendUsingAccount, set *after* creation,
+    is known to silently fail to "stick" through .Send() on some Outlook
+    builds when the item was created generically — Outlook still delivers
+    from the store the item was originally created in, even though the
+    property read-back looks correct. Creating the item via the target
+    account's own default folder avoids that failure mode entirely, since
+    the item is never associated with the wrong store in the first place.
+
+    Returns the MailItem, or None if this account doesn't expose a usable
+    DeliveryStore (falls back to the generic path in that case).
+    """
+    try:
+        store = account_com_obj.DeliveryStore
+        inbox = store.GetDefaultFolder(6)   # 6 = olFolderInbox
+        return inbox.Items.Add("IPM.Note")
+    except Exception:
+        return None
+
+
+def send_outlook(cfg: dict, email: dict, account: dict = None) -> bool:
     """
     Use the locally installed Outlook desktop app via win32com.
     Opens a new mail item pre-filled with all fields, then sends it.
     Outlook must already be signed in.
+
+    IMPORTANT: with more than one Exchange account configured in Outlook,
+    CreateItem(0) does NOT reliably honor the "Set as Default" account from
+    Outlook's Account Settings UI — that setting only affects manually
+    composed mail. Worse, MailItem.SendUsingAccount set on a generically
+    created item can silently fail to take effect at Send() time on some
+    Outlook builds, even though the property reads back correctly right
+    after assignment. To reliably control the sending account, the mail
+    item is created directly inside the target account's own mail store
+    (see _create_mail_in_account_store) whenever that account is resolved,
+    resolved from:
+      1. account["outlook_fallback"]["send_as_account"]   (explicit override)
+      2. account["smtp"]["sender_email"]                  (reuse SMTP identity)
+    If neither is configured, or the address isn't found among the Outlook
+    profile's accounts, this falls back to Outlook's own default behavior.
     """
+    account = account or get_account(cfg)
     try:
         import win32com.client as win32
     except ImportError:
@@ -465,8 +641,54 @@ def send_outlook(cfg: dict, email: dict) -> bool:
             return False
 
     try:
-        outlook = win32.Dispatch("Outlook.Application")
-        mail    = outlook.CreateItem(0)   # 0 = olMailItem
+        # Use early binding (gencache) rather than plain Dispatch(). Under
+        # dynamic/late binding, assigning MailItem.SendUsingAccount can
+        # silently no-op on some Windows/Outlook setups — no exception, the
+        # property just doesn't stick, and the mail goes out from whatever
+        # account Outlook considers default. Early binding resolves
+        # Outlook's real type library and avoids that failure mode. Falls
+        # back to plain Dispatch if gencache can't build (e.g. no write
+        # access to the gencache dir).
+        try:
+            outlook = win32.gencache.EnsureDispatch("Outlook.Application")
+        except Exception as e:
+            _print(f"  [!] gencache.EnsureDispatch failed ({e}); falling back to "
+                   f"Dispatch() — SendUsingAccount may not stick on this machine.")
+            outlook = win32.Dispatch("Outlook.Application")
+
+        send_as = (account.get("outlook_fallback", {}).get("send_as_account")
+                   or account.get("smtp", {}).get("sender_email"))
+
+        mail = None
+        matched_account = None
+        if send_as:
+            matched_account = _find_outlook_account(outlook, send_as)
+            if matched_account is not None:
+                mail = _create_mail_in_account_store(outlook, matched_account)
+                if mail is not None:
+                    _print(f"    Created mail directly in account's store: "
+                           f"{_account_smtp_address(matched_account)}")
+                else:
+                    _print("  [!] Could not create mail in the account's own store "
+                           "(DeliveryStore unavailable) — falling back to "
+                           "SendUsingAccount on a generically created item.")
+            else:
+                seen = [_account_smtp_address(a) or "(unresolved)" for a in outlook.Session.Accounts]
+                _print(f"  [!] Outlook account '{send_as}' not found in this "
+                       f"profile — falling back to Outlook's default account. "
+                       f"(Outlook > File > Account Settings must list it.)")
+                _print(f"      Accounts Outlook automation can see: {', '.join(seen) or '(none)'}")
+
+        if mail is None:
+            mail = outlook.CreateItem(0)   # 0 = olMailItem
+            if matched_account is not None:
+                # Belt-and-suspenders: still set it even though this path is
+                # the less reliable one — it's a correct no-op if it doesn't
+                # stick, and does work on some Outlook builds.
+                mail.SendUsingAccount = matched_account
+                _print(f"    Set SendUsingAccount to: "
+                       f"{_account_smtp_address(matched_account)} "
+                       f"(fallback path — verify the sent item's From address)")
 
         mail.Subject = email["subject"]
         mail.Body    = email["body"]
@@ -487,11 +709,13 @@ def send_outlook(cfg: dict, email: dict) -> bool:
 # MAIN SEND FUNCTION
 # =============================================================================
 
-def send_letter(pdf_path: Path, cfg: dict = None, log_fn=None) -> bool:
+def send_letter(pdf_path: Path, cfg: dict = None, log_fn=None, account: str = None) -> bool:
     """
     Parse the PDF filename, compose the email, and send it.
     Returns True on success.
     log_fn: optional callable(msg, tag) for GUI log panel.
+    account: optional account name to send as, overriding cfg["active_account"]
+             for this call only (used by --account / a GUI account picker).
     """
     def log(msg, tag=None):
         _print(f"  {msg}")
@@ -503,6 +727,14 @@ def send_letter(pdf_path: Path, cfg: dict = None, log_fn=None) -> bool:
     if not cfg:
         log("[!] No email config loaded — skipping send.", "warning")
         return False
+
+    acct_name = account or cfg.get("active_account")
+    acct = get_account(cfg, acct_name)
+    if not acct:
+        log(f"[!] Account '{acct_name}' not found in config — skipping send.", "warning")
+        log(f"    Known accounts: {', '.join(list_accounts(cfg)) or '(none)'}", "warning")
+        return False
+    log(f"    Sending as account: {acct_name}")
 
     # 1. Parse filename
     parsed = parse_pdf_filename(pdf_path)
@@ -529,20 +761,20 @@ def send_letter(pdf_path: Path, cfg: dict = None, log_fn=None) -> bool:
     email = compose_email(cfg, parsed, pdf_path)
 
     # 4. Send — try SMTP first, fall back to Outlook
-    smtp_cfg = cfg.get("smtp", {})
+    smtp_cfg = acct.get("smtp", {})
     has_smtp = bool(smtp_cfg.get("host") and smtp_cfg.get("username")
                     and smtp_cfg.get("password"))
 
     if has_smtp:
         log("    Sending via SMTP...")
-        if send_smtp(cfg, email):
+        if send_smtp(cfg, email, account=acct):
             log(f"[OK] Email sent to {', '.join(email['to'])}", "success")
             return True
         log("    SMTP failed — trying Outlook fallback...", "warning")
 
-    if cfg.get("outlook_fallback", {}).get("enabled", True):
+    if acct.get("outlook_fallback", {}).get("enabled", True):
         log("    Sending via Outlook...")
-        if send_outlook(cfg, email):
+        if send_outlook(cfg, email, account=acct):
             log(f"[OK] Email sent via Outlook to {', '.join(email['to'])}", "success")
             return True
 
@@ -554,9 +786,10 @@ def send_letter(pdf_path: Path, cfg: dict = None, log_fn=None) -> bool:
 # WATCH MODE
 # =============================================================================
 
-def watch_output_folder(folder: Path, log_fn=None):
+def watch_output_folder(folder: Path, log_fn=None, account: str = None):
     """
     Watch a folder for new *_letter.pdf files and auto-send each one.
+    account: optional account name to send as (defaults to cfg["active_account"]).
     """
     def log(msg, tag=None):
         _print(f"  {msg}")
@@ -576,7 +809,7 @@ def watch_output_folder(folder: Path, log_fn=None):
                     processed.add(pdf)
                     time.sleep(1)   # let file finish writing
                     log(f"\n[NEW] {pdf.name}", "info")
-                    send_letter(pdf, cfg=cfg, log_fn=log_fn)
+                    send_letter(pdf, cfg=cfg, log_fn=log_fn, account=account)
             time.sleep(3)
     except KeyboardInterrupt:
         log("\n[WATCH] Stopped.")
@@ -586,26 +819,14 @@ def watch_output_folder(folder: Path, log_fn=None):
 # CONFIG EDITOR (interactive CLI)
 # =============================================================================
 
-def edit_config_cli():
-    """Interactive CLI to set up / edit the email config."""
-    cfg = load_config() if CONFIG_FILE.exists() else {}
-
-    def get(path, default=""):
-        node = cfg
-        for k in path:
-            if not isinstance(node, dict):
-                return default
-            node = node.get(k, default)
-        return node if node != {} else default
-
-    _print("\n=== SmartPayer Email Config Setup ===\n")
-    _print("Press ENTER to keep existing value.\n")
-
+def _edit_account_cli(cfg: dict, name: str):
+    """Prompt for one account's SMTP settings and write them into cfg['accounts'][name]."""
     def ask(prompt, current):
         val = input(f"  {prompt} [{current}]: ").strip()
         return val if val else current
 
-    smtp = cfg.setdefault("smtp", {})
+    acct = cfg.setdefault("accounts", {}).setdefault(name, {})
+    smtp = acct.setdefault("smtp", {})
     smtp["host"]         = ask("SMTP host (e.g. smtp.gmail.com)",    smtp.get("host","smtp.gmail.com"))
     smtp["port"]         = int(ask("SMTP port (587=TLS, 465=SSL)",   str(smtp.get("port",587))))
     smtp["use_tls"]      = ask("Use STARTTLS? (true/false)",         str(smtp.get("use_tls",True)).lower()) == "true"
@@ -615,6 +836,78 @@ def edit_config_cli():
     smtp["sender_email"] = ask("Sender email (blank = username)",    smtp.get("sender_email",""))
     if not smtp["sender_email"]:
         smtp["sender_email"] = smtp["username"]
+
+    outlook = acct.setdefault("outlook_fallback", {})
+    outlook["enabled"] = ask("Enable Outlook fallback for this account? (true/false)",
+                              str(outlook.get("enabled", True)).lower()) == "true"
+    outlook["send_as_account"] = ask(
+        "Outlook 'send as' address (blank = reuse sender email above)",
+        outlook.get("send_as_account", "")
+    )
+
+
+def _manage_accounts_cli(cfg: dict):
+    """Add, edit, delete, or switch between named sender accounts."""
+    accounts = cfg.setdefault("accounts", {})
+    if not accounts:
+        _print("\n  No accounts yet — let's create one.")
+        name = input("  Account name (e.g. 'arrd', 'finance'): ").strip() or "default"
+        _edit_account_cli(cfg, name)
+        cfg["active_account"] = name
+        return
+
+    while True:
+        _print("\n-- Accounts --")
+        for n in accounts:
+            marker = " (active)" if n == cfg.get("active_account") else ""
+            smtp = accounts[n].get("smtp", {})
+            _print(f"    {n}{marker}: {smtp.get('sender_email') or smtp.get('username') or '(not set)'}")
+        _print("  [a]dd new  [e]dit existing  [s]witch active  [d]elete  [ENTER] done")
+        choice = input("  Choice: ").strip().lower()
+
+        if not choice:
+            break
+        elif choice == "a":
+            name = input("  New account name: ").strip()
+            if name:
+                _edit_account_cli(cfg, name)
+                if len(accounts) == 1 or not cfg.get("active_account"):
+                    cfg["active_account"] = name
+        elif choice == "e":
+            name = input("  Account name to edit: ").strip()
+            if name in accounts:
+                _edit_account_cli(cfg, name)
+            else:
+                _print(f"  [!] No such account: {name}")
+        elif choice == "s":
+            name = input("  Account name to make active: ").strip()
+            if set_active_account(cfg, name):
+                _print(f"  [OK] Active account is now '{name}'")
+            else:
+                _print(f"  [!] No such account: {name}")
+        elif choice == "d":
+            name = input("  Account name to delete: ").strip()
+            if name in accounts:
+                del accounts[name]
+                if cfg.get("active_account") == name:
+                    cfg["active_account"] = next(iter(accounts), None)
+                _print(f"  [OK] Deleted '{name}'")
+            else:
+                _print(f"  [!] No such account: {name}")
+
+
+def edit_config_cli():
+    """Interactive CLI to set up / edit the email config."""
+    cfg = load_config() if CONFIG_FILE.exists() else {}
+
+    _print("\n=== SmartPayer Email Config Setup ===\n")
+    _print("Press ENTER to keep existing value.\n")
+
+    def ask(prompt, current):
+        val = input(f"  {prompt} [{current}]: ").strip()
+        return val if val else current
+
+    _manage_accounts_cli(cfg)
 
     _print("\n-- CC (always added to every email) --")
     cc_str = ask("CC addresses (comma-separated)", ", ".join(cfg.get("cc_always", [])))
@@ -656,9 +949,39 @@ def main():
                         help="merge: add/overwrite per row (default). replace: wipe existing first.")
     parser.add_argument("--send-all",    metavar="DIR",
                         help="Send every *_letter.pdf in DIR (used by the GUI's test auto-mailer)")
+    parser.add_argument("--account",     metavar="NAME",
+                        help="Send using this account instead of the config's active_account")
+    parser.add_argument("--list-accounts", action="store_true",
+                        help="List configured sender accounts and exit")
+    parser.add_argument("--set-active-account", metavar="NAME",
+                        help="Set the default sender account and exit")
+    parser.add_argument("--list-outlook-accounts", action="store_true",
+                        help="Diagnostic: list accounts Outlook automation can see and how "
+                             "their SMTP addresses resolve (Windows only, Outlook must be open)")
     args = parser.parse_args()
 
-    if args.edit_config:
+    if args.list_outlook_accounts:
+        list_outlook_accounts()
+    elif args.list_accounts:
+        cfg = load_config()
+        names = list_accounts(cfg)
+        if not names:
+            _print("No accounts configured. Run --edit-config to add one.")
+        else:
+            for n in names:
+                marker = " (active)" if n == cfg.get("active_account") else ""
+                smtp = get_account(cfg, n).get("smtp", {})
+                _print(f"  {n}{marker}: {smtp.get('sender_email') or smtp.get('username') or '(not set)'}")
+    elif args.set_active_account:
+        cfg = load_config()
+        if set_active_account(cfg, args.set_active_account):
+            save_config(cfg)
+            _print(f"[OK] Active account set to '{args.set_active_account}'")
+        else:
+            _print(f"[X] No such account: {args.set_active_account}. "
+                   f"Known: {', '.join(list_accounts(cfg)) or '(none)'}")
+            sys.exit(1)
+    elif args.edit_config:
         edit_config_cli()
     elif args.import_recipients:
         try:
@@ -685,7 +1008,7 @@ def main():
         for pdf in pdfs:
             _print(f"\n--- {pdf.name} ---")
             try:
-                if send_letter(pdf, cfg=cfg):
+                if send_letter(pdf, cfg=cfg, account=args.account):
                     ok += 1
                 else:
                     fail += 1
@@ -698,16 +1021,19 @@ def main():
         p = parse_pdf_filename(Path(args.test_parse))
         _print(json.dumps(p, indent=2) if p else "Could not parse filename.")
     elif args.pdf:
-        success = send_letter(Path(args.pdf))
+        success = send_letter(Path(args.pdf), account=args.account)
         sys.exit(0 if success else 1)
     elif args.watch:
-        watch_output_folder(Path(args.watch))
+        watch_output_folder(Path(args.watch), account=args.account)
     else:
-        _print("Usage: python smartpayer_emailer.py --pdf <file.pdf>")
-        _print("       python smartpayer_emailer.py --watch <output_folder>")
-        _print("       python smartpayer_emailer.py --send-all <output_folder>")
+        _print("Usage: python smartpayer_emailer.py --pdf <file.pdf> [--account NAME]")
+        _print("       python smartpayer_emailer.py --watch <output_folder> [--account NAME]")
+        _print("       python smartpayer_emailer.py --send-all <output_folder> [--account NAME]")
         _print("       python smartpayer_emailer.py --import-recipients <xlsx>")
         _print("       python smartpayer_emailer.py --edit-config")
+        _print("       python smartpayer_emailer.py --list-accounts")
+        _print("       python smartpayer_emailer.py --set-active-account <NAME>")
+        _print("       python smartpayer_emailer.py --list-outlook-accounts")
         _print("       python smartpayer_emailer.py --test-parse <filename.pdf>")
 
 

@@ -1,17 +1,5 @@
 {
-  "smtp": {
-    "host": "smtp.gmail.com",
-    "port": 587,
-    "use_tls": true,
-    "username": "",
-    "password": "",
-    "sender_name": "AR RD Team",
-    "sender_email": ""
-  },
   "cc_always": [],
-  "outlook_fallback": {
-    "enabled": true
-  },
   "email_template": {
     "subject": "Smart Payer {client_name} Periode {month} {year}",
     "body": "Dear Bapak / Ibu Pimpinan RD,\r\n\r\nTerlampir surat dari manajeman kami terkait program “Smart Payer” periode {month} {year} untuk Invoice Jatuh tempo {next_month} {next_year}. Mohon dapat diterima dan dipelajari.\r\n\r\nKami tunggu feedback nya.\r\n\r\nAtas perhatian dan kerjasamanya kami ucapkan terima kasih.\r\n\r\nBest Regards,\r\nAR RD Team"
@@ -881,12 +869,6 @@
         "lisa.yanti@godrejcp.com"
       ]
     },
-    "CHRIS LEFKO": {
-      "to": [
-        "chrislefko@protonmail.com"
-      ],
-      "cc": []
-    },
     "PT. EKA ARTHA BUANA": {
       "to": [
         "christopher.gerard@godrejcp.com",
@@ -895,6 +877,33 @@
       "cc": [
         "lisa.yanti@godrejcp.com"
       ]
+    },
+    "CV. LANGIT BIRU - SUBULUSSALAM": {
+      "to": [
+        "christopher.gerard@godrejcp.com",
+        "janice.ong@godrejcp.com"
+      ],
+      "cc": [
+        "lisa.yanti@godrejcp.com"
+      ]
     }
-  }
+  },
+  "accounts": {
+    "halim.analytics": {
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 587,
+        "use_tls": true,
+        "username": "",
+        "password": "",
+        "sender_name": "AR RD Team",
+        "sender_email": ""
+      },
+      "outlook_fallback": {
+        "enabled": true,
+        "send_as_account": "halim.analytics@godrejcp.com"
+      }
+    }
+  },
+  "active_account": "halim.analytics"
 }
