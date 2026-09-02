@@ -125,6 +125,31 @@ def save_json(path, data):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+def migrate_email_cfg_accounts(cfg):
+    """
+    Mirrors smartpayer_emailer.py's _migrate_to_accounts(): moves a legacy
+    top-level smtp/outlook_fallback pair into accounts['default'] so old
+    and new-format smartpayer_email_config.json files both work here.
+    """
+    if "accounts" in cfg:
+        cfg.setdefault("active_account", next(iter(cfg["accounts"]), "default"))
+        return cfg
+    if "smtp" in cfg or "outlook_fallback" in cfg:
+        cfg["accounts"] = {
+            "default": {
+                "smtp": cfg.pop("smtp", {}),
+                "outlook_fallback": cfg.pop("outlook_fallback", {}),
+            }
+        }
+        cfg["active_account"] = "default"
+    return cfg
+
+
+def load_email_cfg():
+    """load_json + account migration, for anywhere the GUI needs sender accounts."""
+    return migrate_email_cfg_accounts(load_json(EMAIL_CFG))
+
+
 def organize_files_by_prefix(folder_path: Path, progress_cb=None) -> tuple:
     """
     Organize files in folder_path into subfolders based on filename prefix.
@@ -459,15 +484,12 @@ class RecipientsDialog(tk.Toplevel):
         self.grab_set()
         # Each entry: (frame, name_var, to_var, cc_var)
         self._rows = []
-        self._count_var = tk.StringVar(value="0 penerima")
 
         header = tk.Frame(self, bg=ACCENT, height=54)
         header.pack(fill="x")
         header.pack_propagate(False)
         tk.Label(header, text="Email Recipients", bg=ACCENT, fg=BTN_FG,
                  font=("Segoe UI", 13, "bold")).pack(side="left", padx=PAD * 2)
-        tk.Label(header, textvariable=self._count_var, bg=ACCENT, fg="#93C5FD",
-                 font=("Segoe UI", 10)).pack(side="right", padx=PAD * 2)
 
         tk.Label(self, text="Client name matches the XLSX filename. Separate addresses with semicolons.",
                  bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)).pack(
@@ -516,12 +538,6 @@ class RecipientsDialog(tk.Toplevel):
                     width=12, bg="#6B7280").pack(side="right")
         self._center(parent)
 
-    # -- count -----------------------------------------------------------------
-
-    def _update_count(self):
-        n = len(self._rows)
-        self._count_var.set(f"{n} penerima")
-
     # -- search ----------------------------------------------------------------
 
     def _filter_rows(self, *_):
@@ -548,12 +564,10 @@ class RecipientsDialog(tk.Toplevel):
         def delete():
             frame.destroy()
             self._rows[:] = [r for r in self._rows if r[0] is not frame]
-            self._update_count()
 
         tk.Button(frame, text="X", command=delete, bg=PANEL_BG, fg=DANGER,
                   relief="flat", cursor="hand2").pack(side="left", padx=2)
         self._rows.append((frame, nv, tv, cv))
-        self._update_count()
 
     def _delete_all(self):
         if not self._rows:
@@ -565,7 +579,6 @@ class RecipientsDialog(tk.Toplevel):
         for child in list(self._inner.children.values()):
             child.destroy()
         self._rows.clear()
-        self._update_count()
 
     def _import_xlsx(self):
         if not EMAILER.exists():
@@ -602,7 +615,6 @@ class RecipientsDialog(tk.Toplevel):
         cfg = load_json(EMAIL_CFG)
         for name, val in cfg.get("recipients", {}).items():
             self._add(name, "; ".join(val.get("to", [])), "; ".join(val.get("cc", [])))
-        self._update_count()
         messagebox.showinfo("Import complete", "Recipients imported.", parent=self)
 
     def _save(self):
@@ -619,6 +631,186 @@ class RecipientsDialog(tk.Toplevel):
         save_json(EMAIL_CFG, cfg)
         messagebox.showinfo("Saved", f"{len(cfg['recipients'])} recipient(s) saved.",
                             parent=self)
+        self.destroy()
+
+    def _center(self, parent):
+        self.update_idletasks()
+        x = parent.winfo_rootx() + parent.winfo_width() // 2 - self.winfo_width() // 2
+        y = parent.winfo_rooty() + parent.winfo_height() // 2 - self.winfo_height() // 2
+        self.geometry(f"+{x}+{y}")
+
+
+class AccountsDialog(tk.Toplevel):
+    """Add/edit/delete named sender accounts and pick which one is active."""
+
+    def __init__(self, parent, on_saved=None):
+        super().__init__(parent)
+        self.title("Sender Accounts")
+        self.configure(bg=BG)
+        self.geometry("620x560")
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+        self._on_saved = on_saved
+        self._rows = []  # each: dict of tk vars + frame, see _add_account_row
+
+        header = tk.Frame(self, bg=ACCENT, height=54)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        tk.Label(header, text="Sender Accounts", bg=ACCENT, fg=BTN_FG,
+                 font=("Segoe UI", 13, "bold")).pack(side="left", padx=PAD * 2)
+
+        tk.Label(self,
+                 text="Configure one or more email identities the auto-emailer can send from. "
+                      "Pick 'Active' to control which one is used.",
+                 bg=BG, fg=SUBTEXT, font=("Segoe UI", 9), wraplength=580,
+                 justify="left").pack(anchor="w", padx=PAD * 2, pady=(PAD, 4))
+
+        panel = tk.Frame(self, bg=PANEL_BG, highlightbackground=BORDER,
+                         highlightthickness=1)
+        panel.pack(fill="both", expand=True, padx=PAD * 2, pady=PAD)
+        outer, self._inner = scroll_frame(panel)
+        outer.pack(fill="both", expand=True, padx=PAD, pady=PAD)
+
+        cfg = load_email_cfg()
+        active_name = cfg.get("active_account")
+        self._active_idx = tk.IntVar(value=0)
+        accounts = cfg.get("accounts", {})
+        if not accounts:
+            self._add_account_row("default")
+        else:
+            for i, (name, acct) in enumerate(accounts.items()):
+                self._add_account_row(name, acct)
+                if name == active_name:
+                    self._active_idx.set(i)
+
+        foot = tk.Frame(self, bg=BG)
+        foot.pack(fill="x", padx=PAD * 2, pady=(0, PAD))
+        make_button(foot, "+ Add Account", lambda: self._add_account_row(""),
+                    width=15).pack(side="left")
+        make_button(foot, "Save", self._save,
+                    width=12, bg=SUCCESS).pack(side="right", padx=(6, 0))
+        make_button(foot, "Cancel", self.destroy,
+                    width=12, bg="#6B7280").pack(side="right")
+        self._center(parent)
+
+    def _add_account_row(self, name="", acct=None):
+        acct = acct or {}
+        smtp = acct.get("smtp", {})
+        outlook = acct.get("outlook_fallback", {})
+
+        idx = len(self._rows)
+        card = tk.Frame(self._inner, bg=PANEL_BG, highlightbackground=BORDER,
+                        highlightthickness=1)
+        card.pack(fill="x", pady=(0, 10), ipady=6)
+
+        row = {
+            "frame": card,
+            "name_var": tk.StringVar(value=name),
+            "host_var": tk.StringVar(value=smtp.get("host", "")),
+            "port_var": tk.StringVar(value=str(smtp.get("port", 587))),
+            "tls_var": tk.BooleanVar(value=smtp.get("use_tls", True)),
+            "user_var": tk.StringVar(value=smtp.get("username", "")),
+            "pass_var": tk.StringVar(value=smtp.get("password", "")),
+            "sender_name_var": tk.StringVar(value=smtp.get("sender_name", "ARRD Team")),
+            "sender_email_var": tk.StringVar(value=smtp.get("sender_email", "")),
+            "outlook_enabled_var": tk.BooleanVar(value=outlook.get("enabled", True)),
+            "outlook_send_as_var": tk.StringVar(value=outlook.get("send_as_account", "")),
+        }
+
+        top = tk.Frame(card, bg=PANEL_BG)
+        top.pack(fill="x", padx=8, pady=(6, 4))
+        tk.Label(top, text="Account name:", bg=PANEL_BG, fg=TEXT,
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+        make_entry(top, row["name_var"], width=18).pack(side="left", padx=(6, 14), ipady=3)
+        tk.Radiobutton(top, text="Active", variable=self._active_idx, value=idx,
+                       bg=PANEL_BG, fg=TEXT, selectcolor=PANEL_BG,
+                       activebackground=PANEL_BG, cursor="hand2").pack(side="left")
+
+        def delete():
+            card.destroy()
+            self._rows[:] = [r for r in self._rows if r is not row]
+
+        tk.Button(top, text="Delete", command=delete, bg=PANEL_BG, fg=DANGER,
+                  relief="flat", cursor="hand2", font=("Segoe UI", 8)).pack(side="right")
+
+        grid = tk.Frame(card, bg=PANEL_BG)
+        grid.pack(fill="x", padx=8, pady=(0, 4))
+
+        def field(r, c, label, var, width=22):
+            tk.Label(grid, text=label, bg=PANEL_BG, fg=SUBTEXT,
+                     font=("Segoe UI", 8)).grid(row=r, column=c * 2, sticky="w", padx=(0, 4))
+            make_entry(grid, var, width=width).grid(row=r, column=c * 2 + 1, sticky="w",
+                                                     padx=(0, 14), pady=2, ipady=2)
+
+        field(0, 0, "SMTP host", row["host_var"], 22)
+        field(0, 1, "Port", row["port_var"], 6)
+        field(1, 0, "Username", row["user_var"], 22)
+        field(1, 1, "Password", row["pass_var"], 16)
+        # mask the password entry
+        for child in grid.grid_slaves(row=1, column=3):
+            child.config(show="*")
+        field(2, 0, "Sender name", row["sender_name_var"], 22)
+        field(2, 1, "Sender email", row["sender_email_var"], 22)
+        field(3, 0, "Outlook 'send as'", row["outlook_send_as_var"], 22)
+
+        tk.Checkbutton(card, text="Use STARTTLS", variable=row["tls_var"],
+                       bg=PANEL_BG, fg=TEXT, selectcolor=PANEL_BG,
+                       activebackground=PANEL_BG, font=("Segoe UI", 8),
+                       cursor="hand2").pack(anchor="w", padx=8)
+        tk.Checkbutton(card, text="Enable Outlook fallback", variable=row["outlook_enabled_var"],
+                       bg=PANEL_BG, fg=TEXT, selectcolor=PANEL_BG,
+                       activebackground=PANEL_BG, font=("Segoe UI", 8),
+                       cursor="hand2").pack(anchor="w", padx=8, pady=(0, 4))
+
+        self._rows.append(row)
+
+    def _save(self):
+        cfg = load_email_cfg()
+        accounts = {}
+        active_name = None
+        for i, row in enumerate(self._rows):
+            name = row["name_var"].get().strip()
+            if not name:
+                continue
+            try:
+                port = int(row["port_var"].get().strip() or 587)
+            except ValueError:
+                messagebox.showerror("Invalid port",
+                                     f"Port for '{name}' must be a number.", parent=self)
+                return
+            sender_email = row["sender_email_var"].get().strip() or row["user_var"].get().strip()
+            accounts[name] = {
+                "smtp": {
+                    "host": row["host_var"].get().strip(),
+                    "port": port,
+                    "use_tls": bool(row["tls_var"].get()),
+                    "username": row["user_var"].get().strip(),
+                    "password": row["pass_var"].get(),
+                    "sender_name": row["sender_name_var"].get().strip() or "ARRD Team",
+                    "sender_email": sender_email,
+                },
+                "outlook_fallback": {
+                    "enabled": bool(row["outlook_enabled_var"].get()),
+                    "send_as_account": row["outlook_send_as_var"].get().strip(),
+                },
+            }
+            if self._active_idx.get() == i:
+                active_name = name
+
+        if not accounts:
+            messagebox.showerror("No accounts", "Add at least one account.", parent=self)
+            return
+        if active_name is None:
+            active_name = next(iter(accounts))
+
+        cfg["accounts"] = accounts
+        cfg["active_account"] = active_name
+        save_json(EMAIL_CFG, cfg)
+        messagebox.showinfo("Saved", f"{len(accounts)} account(s) saved. Active: {active_name}",
+                            parent=self)
+        if self._on_saved:
+            self._on_saved()
         self.destroy()
 
     def _center(self, parent):
@@ -819,6 +1011,19 @@ class SmartpayerApp(tk.Tk):
         inner = tk.Frame(panel, bg=PANEL_BG)
         inner.pack(fill="x", padx=PAD, pady=PAD)
 
+        acct_row = tk.Frame(inner, bg=PANEL_BG)
+        acct_row.pack(fill="x", pady=(0, 8))
+        tk.Label(acct_row, text="Sending as:", bg=PANEL_BG, fg=TEXT,
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 6))
+        self._account_var = tk.StringVar()
+        self._account_combo = ttk.Combobox(
+            acct_row, textvariable=self._account_var, state="readonly", width=18)
+        self._account_combo.pack(side="left")
+        self._account_combo.bind("<<ComboboxSelected>>", self._on_account_selected)
+        make_button(acct_row, "Manage Accounts",
+                    lambda: AccountsDialog(self, on_saved=self._refresh_account_dropdown),
+                    width=15, bg="#6B7280", font_size=8).pack(side="left", padx=(8, 0))
+
         btn_row = tk.Frame(inner, bg=PANEL_BG)
         btn_row.pack(fill="x")
         make_button(btn_row, "Recipients List", lambda: RecipientsDialog(self),
@@ -830,7 +1035,32 @@ class SmartpayerApp(tk.Tk):
         tk.Label(inner, textvariable=self._email_status_var,
                  bg=PANEL_BG, fg=SUBTEXT, font=("Segoe UI", 8, "italic"),
                  wraplength=390, justify="left").pack(fill="x", anchor="w", pady=(8, 0))
+        self._refresh_account_dropdown()
+
+    def _refresh_account_dropdown(self):
+        cfg = load_email_cfg()
+        names = list(cfg.get("accounts", {}).keys())
+        active = cfg.get("active_account")
+        self._account_combo["values"] = names
+        if active in names:
+            self._account_var.set(active)
+        elif names:
+            self._account_var.set(names[0])
+        else:
+            self._account_var.set("")
         self._refresh_email_status()
+
+    def _on_account_selected(self, _event=None):
+        name = self._account_var.get()
+        if not name:
+            return
+        cfg = load_email_cfg()
+        if name not in cfg.get("accounts", {}):
+            return
+        cfg["active_account"] = name
+        save_json(EMAIL_CFG, cfg)
+        self._refresh_email_status()
+        self._log_write(f"Sender account switched to '{name}'.", "info")
 
     def _build_run_panel(self, parent):
         panel = tk.Frame(parent, bg=PANEL_BG,
@@ -975,11 +1205,14 @@ class SmartpayerApp(tk.Tk):
         self._input_file_var.set("")
 
     def _refresh_email_status(self):
-        cfg = load_json(EMAIL_CFG)
+        cfg = load_email_cfg()
         count = len(cfg.get("recipients", {}))
-        smtp = cfg.get("smtp", {})
+        active_name = cfg.get("active_account") or "(none)"
+        accounts = cfg.get("accounts", {})
+        smtp = accounts.get(cfg.get("active_account"), {}).get("smtp", {})
         method = "SMTP" if smtp.get("username") else "Outlook"
-        self._email_status_var.set(f"{count} recipient(s) configured. Send via {method}.")
+        self._email_status_var.set(
+            f"{count} recipient(s) configured. Account '{active_name}' sends via {method}.")
 
     def _export_log(self):
         """Export the activity log to a .txt file."""
